@@ -111,7 +111,7 @@ export default function SurveyPage() {
       const toSave = visibleQuestions.filter(q => answers[q.id] !== undefined && answers[q.id] !== '')
 
       for (const q of toSave) {
-        const res = await fetch('/api/response', {
+        const apiRes: Response = await fetch('/api/response', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -124,8 +124,8 @@ export default function SurveyPage() {
             language: 'en'
           })
         })
-        const data = await res.json()
-        if (!respondentId) respondentId = data.respondent_id
+        const data: { respondent_id?: string } = await apiRes.json()
+        if (!respondentId && data.respondent_id) respondentId = data.respondent_id
       }
 
       setSubmitted(true)
