@@ -11,12 +11,13 @@ export default function SurveyPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showConfirm, setShowConfirm] = useState(false)
 
   useEffect(() => {
     async function loadSurvey() {
       try {
-        const res = await fetch('/api/survey')
-        const { survey } = await res.json()
+        const surveyRes: Response = await fetch('/api/survey')
+        const { survey } = await surveyRes.json()
         setSurveyId(survey.id)
         setQuestions(survey.questions)
       } catch {
@@ -28,24 +29,19 @@ export default function SurveyPage() {
     loadSurvey()
   }, [])
 
-  // Which questions are currently visible based on show_if conditions
   const visibleQuestions = useMemo(() => {
     return questions.filter(q => {
       if (!q.show_if) return true
-      const dependentAnswer = answers[q.show_if.question_id]
-      return dependentAnswer && q.show_if.equals.includes(dependentAnswer)
+      const dep = answers[q.show_if.question_id]
+      return dep && q.show_if.equals.includes(dep)
     })
   }, [questions, answers])
 
-  // Group visible questions by section, preserving order
   const sections = useMemo(() => {
     const map: { name: string; items: Question[] }[] = []
     for (const q of visibleQuestions) {
       let group = map.find(s => s.name === q.section)
-      if (!group) {
-        group = { name: q.section, items: [] }
-        map.push(group)
-      }
+      if (!group) { group = { name: q.section, items: [] }; map.push(group) }
       group.items.push(q)
     }
     return map
@@ -65,28 +61,18 @@ export default function SurveyPage() {
     })
   }
 
-  // Is this visible+required question answered?
-  function isAnswered(q: Question) {
-    if (q.required === false) return true
+  function hasAnswer(q: Question) {
     const val = answers[q.id]
-    if (q.type === 'multi_select') {
-      if (!val || val.length === 0) return false
-      if (val.includes('Other') && !otherText[q.id]?.trim()) return false
-      return true
-    }
-    if (val === undefined || val === null || val === '') return false
-    if (val === 'Other' && !otherText[q.id]?.trim()) return false
-    return true
+    if (q.type === 'multi_select') return Array.isArray(val) && val.length > 0
+    return val !== undefined && val !== null && val !== ''
   }
 
-  const requiredVisible = visibleQuestions.filter(q => q.required !== false)
-  const answeredCount = requiredVisible.filter(isAnswered).length
-  const progress = requiredVisible.length
-    ? Math.round((answeredCount / requiredVisible.length) * 100)
+  const answeredCount = visibleQuestions.filter(hasAnswer).length
+  const progress = visibleQuestions.length
+    ? Math.round((answeredCount / visibleQuestions.length) * 100)
     : 0
-  const allAnswered = requiredVisible.every(isAnswered)
+  const allAnswered = answeredCount === visibleQuestions.length
 
-  // Build the final value to save for a question
   function finalValue(q: Question) {
     const val = answers[q.id]
     if (q.type === 'multi_select') {
@@ -105,10 +91,11 @@ export default function SurveyPage() {
   async function handleSubmit() {
     if (!surveyId) return
     setSubmitting(true)
+    setShowConfirm(false)
 
     try {
       let respondentId: string | null = null
-      const toSave = visibleQuestions.filter(q => answers[q.id] !== undefined && answers[q.id] !== '')
+      const toSave = visibleQuestions.filter(q => hasAnswer(q))
 
       for (const q of toSave) {
         const apiRes: Response = await fetch('/api/response', {
@@ -136,6 +123,14 @@ export default function SurveyPage() {
     }
   }
 
+  function onSubmitClick() {
+    if (!allAnswered) {
+      setShowConfirm(true)
+    } else {
+      handleSubmit()
+    }
+  }
+
   if (loading) return <Center><p style={{ color: '#666' }}>Loading survey...</p></Center>
   if (error) return <Center><p style={{ color: 'red' }}>{error}</p></Center>
 
@@ -143,9 +138,11 @@ export default function SurveyPage() {
     <Center>
       <div style={styles.thankyou}>
         <div style={styles.checkmark}>✓</div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>Thank you for your feedback</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+          Thank you for your feedback
+        </h2>
         <p style={{ color: '#555', fontSize: 15 }}>
-          Your response has been recorded and will help shape policy dialogue at ADC.
+          Your response has been recorded and will help shape future ADC programming.
         </p>
       </div>
     </Center>
@@ -153,7 +150,34 @@ export default function SurveyPage() {
 
   return (
     <div style={styles.page}>
-      {/* Sticky progress bar */}
+
+      {/* Confirmation dialog */}
+      {showConfirm && (
+        <div style={styles.overlay}>
+          <div style={styles.dialog}>
+            <h3 style={styles.dialogTitle}>Not all questions were answered yet.</h3>
+            <p style={styles.dialogSub}>Are you ready to submit?</p>
+            <div style={styles.dialogBtns}>
+              <button
+                type="button"
+                onClick={() => setShowConfirm(false)}
+                style={styles.dialogBtnSecondary}
+              >
+                Finish answering
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                style={styles.dialogBtnPrimary}
+              >
+                Submit as is
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Progress bar */}
       <div style={styles.progressWrap}>
         <div style={styles.progressBarBg}>
           <div style={{ ...styles.progressBarFill, width: `${progress}%` }} />
@@ -163,7 +187,7 @@ export default function SurveyPage() {
 
       <div style={styles.header}>
         <p style={styles.headerLabel}>African Development Conference 2026</p>
-        <h1 style={styles.headerTitle}>Event Feedback & Impact Survey</h1>
+        <h1 style={styles.headerTitle}>Event Feedback Survey</h1>
         <p style={styles.headerSub}>
           Your input directly informs policy dialogue and future ADC programming.
         </p>
@@ -176,12 +200,9 @@ export default function SurveyPage() {
 
             {section.items.map(q => (
               <div key={q.id} style={styles.questionBlock}>
-                <label style={styles.questionLabel}>
-                  {q.text}
-                  {q.required === false && <span style={styles.optionalTag}> (optional)</span>}
-                </label>
+                <label style={styles.questionLabel}>{q.text}</label>
 
-                {(q.type === 'text') && (
+                {q.type === 'text' && (
                   <input
                     type="text"
                     value={answers[q.id] ?? ''}
@@ -197,6 +218,19 @@ export default function SurveyPage() {
                     rows={3}
                     style={styles.textarea}
                   />
+                )}
+
+                {q.type === 'dropdown' && q.options && (
+                  <select
+                    value={answers[q.id] ?? ''}
+                    onChange={e => setAnswer(q.id, e.target.value)}
+                    style={styles.select}
+                  >
+                    <option value="">Select an option...</option>
+                    {q.options.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
                 )}
 
                 {q.type === 'mcq' && q.options && (
@@ -272,7 +306,7 @@ export default function SurveyPage() {
                   <div>
                     <div style={styles.ratingRow}>
                       {Array.from(
-                        { length: (q.scale_max! - q.scale_min! + 1) },
+                        { length: q.scale_max! - q.scale_min! + 1 },
                         (_, i) => q.scale_min! + i
                       ).map(num => (
                         <button
@@ -301,20 +335,16 @@ export default function SurveyPage() {
 
         <button
           type="button"
-          onClick={handleSubmit}
-          disabled={!allAnswered || submitting}
+          onClick={onSubmitClick}
+          disabled={submitting}
           style={{
             ...styles.submitBtn,
-            opacity: allAnswered && !submitting ? 1 : 0.45,
-            cursor: allAnswered && !submitting ? 'pointer' : 'not-allowed'
+            opacity: submitting ? 0.6 : 1,
+            cursor: submitting ? 'not-allowed' : 'pointer'
           }}
         >
           {submitting ? 'Submitting...' : 'Submit Feedback →'}
         </button>
-
-        {!allAnswered && (
-          <p style={styles.hint}>Please answer all required questions to submit.</p>
-        )}
       </div>
     </div>
   )
@@ -338,6 +368,60 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  overlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  dialog: {
+    background: '#fff',
+    borderRadius: 16,
+    padding: '2rem',
+    maxWidth: 380,
+    width: '90%',
+    textAlign: 'center',
+    boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+  },
+  dialogTitle: {
+    fontSize: 17,
+    fontWeight: 700,
+    color: '#0b2f1b',
+    marginBottom: 8,
+  },
+  dialogSub: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 20,
+  },
+  dialogBtns: {
+    display: 'flex',
+    gap: 10,
+    justifyContent: 'center',
+  },
+  dialogBtnSecondary: {
+    padding: '10px 18px',
+    border: '1px solid #0b2f1b',
+    borderRadius: 10,
+    background: '#fff',
+    color: '#0b2f1b',
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  dialogBtnPrimary: {
+    padding: '10px 18px',
+    border: 'none',
+    borderRadius: 10,
+    background: '#0b2f1b',
+    color: '#9be61a',
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
   },
   progressWrap: {
     position: 'sticky',
@@ -430,11 +514,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#0b2f1b',
     lineHeight: 1.4,
   },
-  optionalTag: {
-    fontWeight: 400,
-    color: '#94a3b8',
-    fontSize: 13,
-  },
   input: {
     width: '100%',
     padding: '10px 12px',
@@ -455,6 +534,18 @@ const styles: Record<string, React.CSSProperties> = {
     resize: 'vertical',
     fontFamily: 'inherit',
     outline: 'none',
+  },
+  select: {
+    width: '100%',
+    padding: '10px 12px',
+    border: '1px solid #e2e8f0',
+    borderRadius: 10,
+    fontSize: 14,
+    color: '#0b2f1b',
+    background: '#fff',
+    fontFamily: 'inherit',
+    cursor: 'pointer',
+    appearance: 'auto',
   },
   optionGroup: {
     display: 'flex',
@@ -544,12 +635,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     width: '100%',
     marginTop: '1rem',
-  },
-  hint: {
-    textAlign: 'center',
-    fontSize: 13,
-    color: '#94a3b8',
-    marginTop: -8,
   },
   thankyou: {
     textAlign: 'center',

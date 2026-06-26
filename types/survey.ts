@@ -1,7 +1,7 @@
 export type Channel = 'web' | 'sms' | 'whatsapp' | 'voice'
 export type Language = 'en' | 'ha' | 'yo' | 'ig' | 'pcm'
 
-export type QuestionType = 'text' | 'long_text' | 'mcq' | 'multi_select' | 'rating'
+export type QuestionType = 'text' | 'long_text' | 'mcq' | 'multi_select' | 'rating' | 'dropdown'
 
 export interface ShowIf {
   question_id: string
